@@ -1,0 +1,5 @@
+selenium
+beautifulsoup4
+loguru
+pandas==1.3.0
+pyyaml
