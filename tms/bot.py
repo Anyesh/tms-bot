@@ -25,10 +25,12 @@ class OrderManagement:
     def __init__(self, order_form: WebDriver):
         self.order_form = order_form
 
-    def buy(self, config: DotDict, last_high_price: float) -> Tuple[bool, float]:
+    def buy(self, config: DotDict, last_high_price: float) -> Tuple[bool, float, bool]:
         try:
             logger.info(f"Our last high price is {last_high_price}")
             order_form = self.order_form
+            if not order_form:
+                raise Exception("Order form not found")
             logger.info(f"Filling in symbol name: {config.symbol}")
 
             symbol_input = order_form.find_element_by_xpath(
@@ -60,11 +62,17 @@ class OrderManagement:
                 .find_element_by_tag_name("b")
                 .text
             )
+            while float(high_price) == 0:
+                high_price = (
+                    high_price_handle.find_element_by_xpath("..")
+                    .find_element_by_tag_name("b")
+                    .text
+                )
             high_price = float(high_price)
             logger.info(f"Current high price is {high_price}")
             if high_price <= last_high_price:
-                logger.info("Current is less then last high price so exiting.")
-                return (True, high_price)
+                logger.info("Current is less/equal to last high price so exiting.")
+                return (True, high_price, False)
 
             logger.info(f"Setting quantity {config.quantity}")
             qty_input = order_form.find_element_by_xpath(
@@ -77,7 +85,8 @@ class OrderManagement:
             price_input = order_form.find_element_by_xpath(
                 "//input[@formcontrolname='price']"
             )
-            price_input.send_keys(high_price)
+
+            price_input.send_keys(str(high_price))
 
             buy_btn = order_form.find_element_by_xpath(
                 "//button[contains(@class, 'btn') and contains(@class, 'btn-sm') and contains(@class, 'btn-primary')]"
@@ -85,12 +94,13 @@ class OrderManagement:
 
             if buy_btn.is_enabled():
                 buy_btn.click()
-                return (True, high_price)
+                logger.info("Successfully bought at. Waiting for next value change.")
+                return (True, high_price, True)
             else:
                 raise Exception("Buy button is disabled")
         except Exception as e:
             logger.error(f"There was an error on buying: {e}")
-            return False, 0.0
+            return (False, 0.0, False)
 
 
 class TMSBot:
@@ -109,8 +119,9 @@ class TMSBot:
         return self
 
     def terminate(self):
-        self.bot.close()
-        self.bot.quit()
+        pass
+        # self.bot.close()
+        # self.bot.quit()
 
     def __exit__(self, type, value, traceback):
         self.terminate()
@@ -119,27 +130,31 @@ class TMSBot:
         self.bot.refresh()
 
     def order_management(self, delay: int = DELAY) -> OrderManagement:
-        _ = WebDriverWait(self.bot, delay).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "menu__main"))
-        )
-        logger.info("Redirecting to order management")
-        self.bot.get(TMS_BASE + "/tms/me/memberclientorderentry")
+        try:
+            _ = WebDriverWait(self.bot, delay).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "menu__main"))
+            )
+            logger.info("Redirecting to order management")
+            self.bot.get(TMS_BASE + "/tms/me/memberclientorderentry")
 
-        buy_sell_tab: WebDriver = WebDriverWait(self.bot, DELAY).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "xtoggler-control"))
-        )
-        # toggle_controller = buy_sell_tab.find_element_by_class_name("xtoggler-control")
-        toggle_buttons = buy_sell_tab.find_elements_by_xpath(
-            "//label[@class='xtoggler-btn-wrapper']"
-        )
-        logger.info("Setting toggle to BUY")
-        toggle_buttons[-1].click()
+            buy_sell_tab: WebDriver = WebDriverWait(self.bot, DELAY).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "xtoggler-control"))
+            )
+            # toggle_controller = buy_sell_tab.find_element_by_class_name("xtoggler-control")
+            toggle_buttons = buy_sell_tab.find_elements_by_xpath(
+                "//label[@class='xtoggler-btn-wrapper']"
+            )
+            logger.info("Setting toggle to BUY")
+            toggle_buttons[-1].click()
 
-        order_form = self.bot.find_element_by_xpath(
-            "//form[contains(@class, 'order__form ') and contains(@class, 'ng-pristine')]"
-        )
+            order_form = self.bot.find_element_by_xpath(
+                "//form[contains(@class, 'order__form ') and contains(@class, 'ng-pristine')]"
+            )
 
-        return OrderManagement(order_form)
+            return OrderManagement(order_form)
+        except Exception as e:
+            logger.error(f"Error on order management: {e}")
+            return OrderManagement(None)
 
     def login(self) -> bool:
         is_error = False
