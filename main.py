@@ -1,19 +1,19 @@
 from tms.bot import TMSBot
 from getpass import getpass
 
-# from tms.handlers import get_linkedin_creds, get_targets
 from tms.settings import logger, CONFIGPATH, OUTPUTDIR
 from tms.utils import yaml_loader, DotDict
 import pandas as pd
 import os
 from datetime import datetime
 from pprint import pprint
+import time
 
 
 def make_sure_config_is_available(config):
     try:
         del config["password"]
-    except Exception:
+    except KeyError:
         pass
     pprint(config)
 
@@ -30,7 +30,7 @@ def create_report(data):
 
 
 def pipe() -> None:
-    last_high_price = 0
+    last_high_price = 0.0
 
     logger.info(f"Reading config file from {CONFIGPATH}.")
     config_dict = DotDict(yaml_loader(CONFIGPATH))
@@ -70,18 +70,30 @@ def pipe() -> None:
             return None
         i = 1
         while True:
+            current_time = datetime.now()
+            current_time_str = current_time.strftime("%H:%M:%S")
+            logger.info(f"Current time is {current_time_str}.")
+
+            _hr, _min = config_dict.time.split(":")
+            expected_time = current_time.replace(
+                hour=int(_hr), minute=int(_min), second=0
+            )
+            if expected_time > current_time:
+                logger.info(f"Expected to run in  {expected_time}.")
+                time_to_run = expected_time - current_time
+                logger.info(f"Sleeping for {time_to_run.seconds}")
+                time.sleep(time_to_run.seconds)
             logger.info(f"Running iteration {i}")
-            previous_last_high_price = last_high_price
-            buy_status, last_high_price = tmsbot.order_management().buy(
+            buy_status, last_high_price, is_fresh_buy = tmsbot.order_management().buy(
                 config=config_dict, last_high_price=last_high_price
             )
             if buy_status:
-                logger.info("Successfully bought. Waiting for next value change.")
                 tmsbot.refresh()
-                if previous_last_high_price != last_high_price:
+                if is_fresh_buy:
+                    logger.info(f"Creating report of last purchase!")
                     create_report(
                         data={
-                            "timestamp": str(datetime.today()),
+                            "timestamp": str(current_time),
                             "buy_status": "success",
                             "symbol": config_dict.symbol,
                             "quantity": config_dict.quantity,
@@ -94,7 +106,13 @@ def pipe() -> None:
                 retry = config_dict.retry
                 while retry:
                     logger.info(f"Total retry left {retry}")
-                    buy_status = tmsbot.order_management().buy(config=config_dict)
+                    (
+                        buy_status,
+                        last_high_price,
+                        is_fresh_buy,
+                    ) = tmsbot.order_management().buy(
+                        config=config_dict, last_high_price=last_high_price
+                    )
                     if buy_status:
                         break
                     retry -= 1
