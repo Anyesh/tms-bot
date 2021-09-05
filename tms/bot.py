@@ -119,9 +119,8 @@ class TMSBot:
         return self
 
     def terminate(self):
-        pass
-        # self.bot.close()
-        # self.bot.quit()
+        self.bot.close()
+        self.bot.quit()
 
     def __exit__(self, type, value, traceback):
         self.terminate()
