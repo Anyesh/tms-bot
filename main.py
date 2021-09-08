@@ -22,8 +22,10 @@ def create_report(data):
     OUTPUTDIR.mkdir(parents=True, exist_ok=True)
     todays_date = str(datetime.now().date())
     file_name = f"{todays_date}.csv"
-    if os.path.isfile(f"{OUTPUTDIR}/{file_name}"):
-        pd.read_csv(f"{OUTPUTDIR}/{file_name}").append([data])
+    if os.path.isfile(OUTPUTDIR / file_name):
+        tmp = pd.read_csv(OUTPUTDIR / file_name)
+        tmp.append([data])
+        tmp.to_csv(f"{OUTPUTDIR}/{file_name}", index=False)
     else:
         pd.DataFrame([data]).to_csv(f"{OUTPUTDIR}/{file_name}", index=False)
     return True
@@ -103,21 +105,7 @@ def pipe() -> None:
                 i += 1
             else:
                 logger.error("Failed to buy. Retrying..")
-                retry = config_dict.retry
-                while retry:
-                    logger.info(f"Total retry left {retry}")
-                    (
-                        buy_status,
-                        last_high_price,
-                        is_fresh_buy,
-                    ) = tmsbot.order_management().buy(
-                        config=config_dict, last_high_price=last_high_price
-                    )
-                    if buy_status:
-                        break
-                    retry -= 1
-                logger.error("Could not complete the request! ENDING")
-                break
+                continue
         return None
 
 
